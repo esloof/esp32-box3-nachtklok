@@ -1,10 +1,10 @@
-// Nachtklok voor ESP32-S3-BOX-3
-// - Tijd via WiFi + NTP (automatische zomer/wintertijd)
-// - Datum in het Nederlands
-// - Buitentemperatuur via Open-Meteo
-// - Binnentemperatuur/luchtvochtigheid als de Sensor-dock (AHT30) aanwezig is
-// - Donkere achtergrond, automatisch gedimd 's nachts
-// - Boot-knop (GPIO0): helderheid wisselen (auto / fel / gedimd / uit)
+// Night clock for the ESP32-S3-BOX-3
+// - Time via WiFi + NTP (automatic daylight saving time)
+// - Date in English
+// - Outdoor temperature via Open-Meteo
+// - Indoor temperature/humidity when the Sensor dock (AHT30) is present
+// - Dark background, automatically dimmed at night
+// - Boot button (GPIO0): cycle brightness (auto / bright / dim / off)
 
 #include <Arduino.h>
 #include <WiFi.h>
@@ -21,11 +21,11 @@
 #define PIN_LCD_MOSI 6
 #define PIN_LCD_DC   4
 #define PIN_LCD_CS   5
-#define PIN_LCD_RST  48   // active HIGH op de BOX-3 (gedeeld met touch)
+#define PIN_LCD_RST  48   // active HIGH on the BOX-3 (shared with touch)
 #define PIN_LCD_BL   47
-#define PIN_BUTTON   0    // Boot-knop
+#define PIN_BUTTON   0    // Boot button
 
-// Pas aan als het beeld op z'n kop staat of de kleuren omgekeerd zijn
+// Change these if the image is upside down or the colours are inverted
 #ifndef LCD_ROTATION
 #define LCD_ROTATION 2
 #endif
@@ -57,7 +57,7 @@ class LGFX : public lgfx::LGFX_Device {
     {
       auto cfg = _panel.config();
       cfg.pin_cs = PIN_LCD_CS;
-      cfg.pin_rst = -1;  // handmatig (active high)
+      cfg.pin_rst = -1;  // manual (active high)
       cfg.pin_busy = -1;
       cfg.panel_width = 320;
       cfg.panel_height = 240;
@@ -96,13 +96,13 @@ static bool timeValid = false;
 enum BrightMode { B_AUTO, B_DAY, B_NIGHT, B_OFF };
 static BrightMode brightMode = B_AUTO;
 
-static const char *DAGEN[] = {"zondag", "maandag", "dinsdag", "woensdag",
-                              "donderdag", "vrijdag", "zaterdag"};
-static const char *MAANDEN[] = {"januari", "februari", "maart",     "april",
-                                "mei",     "juni",     "juli",      "augustus",
-                                "september", "oktober", "november", "december"};
+static const char *DAYS[] = {"Sunday", "Monday", "Tuesday", "Wednesday",
+                             "Thursday", "Friday", "Saturday"};
+static const char *MONTHS[] = {"January", "February", "March",     "April",
+                               "May",     "June",     "July",      "August",
+                               "September", "October", "November", "December"};
 
-// ---------------- AHT30 (Sensor-dock) ----------------
+// ---------------- AHT30 (Sensor dock) ----------------
 static bool ahtProbe(TwoWire &w) {
   w.beginTransmission(0x38);
   return w.endTransmission() == 0;
@@ -119,7 +119,7 @@ static bool ahtRead(float &t, float &h) {
   if (ahtBus->requestFrom(0x38, 7) != 7) return false;
   uint8_t d[7];
   for (int i = 0; i < 7; i++) d[i] = ahtBus->read();
-  if (d[0] & 0x80) return false;  // nog bezig
+  if (d[0] & 0x80) return false;  // still busy
   uint32_t rh = ((uint32_t)d[1] << 12) | ((uint32_t)d[2] << 4) | (d[3] >> 4);
   uint32_t rt = (((uint32_t)d[3] & 0x0F) << 16) | ((uint32_t)d[4] << 8) | d[5];
   h = rh * 100.0f / 1048576.0f;
@@ -128,32 +128,32 @@ static bool ahtRead(float &t, float &h) {
 }
 
 static void initSensor() {
-  // Sensor-dock: I2C op GPIO41 (SDA) / GPIO40 (SCL)
+  // Sensor dock: I2C on GPIO41 (SDA) / GPIO40 (SCL)
   Wire1.begin(41, 40, 100000);
   if (ahtProbe(Wire1)) {
     ahtBus = &Wire1;
   } else {
-    // Interne I2C-bus (GPIO8/18) als alternatief
+    // Internal I2C bus (GPIO8/18) as a fallback
     Wire.begin(8, 18, 100000);
     if (ahtProbe(Wire)) ahtBus = &Wire;
   }
   haveAHT = ahtBus != nullptr;
-  Serial.printf("AHT30 sensor: %s\n", haveAHT ? "gevonden" : "niet gevonden");
+  Serial.printf("AHT30 sensor: %s\n", haveAHT ? "found" : "not found");
 }
 
-// ---------------- Weer ----------------
-static const char *weerTekst(int c) {
+// ---------------- Weather ----------------
+static const char *weatherText(int c) {
   if (c < 0) return "";
-  if (c == 0) return "helder";
-  if (c <= 2) return "half bewolkt";
-  if (c == 3) return "bewolkt";
-  if (c == 45 || c == 48) return "mist";
-  if (c >= 51 && c <= 57) return "motregen";
-  if (c >= 61 && c <= 67) return "regen";
-  if (c >= 71 && c <= 77) return "sneeuw";
-  if (c >= 80 && c <= 82) return "buien";
-  if (c >= 85 && c <= 86) return "sneeuwbuien";
-  if (c >= 95) return "onweer";
+  if (c == 0) return "clear";
+  if (c <= 2) return "partly cloudy";
+  if (c == 3) return "cloudy";
+  if (c == 45 || c == 48) return "fog";
+  if (c >= 51 && c <= 57) return "drizzle";
+  if (c >= 61 && c <= 67) return "rain";
+  if (c >= 71 && c <= 77) return "snow";
+  if (c >= 80 && c <= 82) return "showers";
+  if (c >= 85 && c <= 86) return "snow showers";
+  if (c >= 95) return "thunderstorm";
   return "";
 }
 
@@ -163,27 +163,27 @@ static void fetchWeather() {
   String url = String("http://api.open-meteo.com/v1/forecast?latitude=") + WEATHER_LAT +
                "&longitude=" + WEATHER_LON + "&current=temperature_2m,weather_code";
   http.setTimeout(8000);
-  http.useHTTP10(true);  // geen chunked encoding, zodat getStream() schone JSON geeft
-  Serial.println("Weer ophalen: " + url);
+  http.useHTTP10(true);  // no chunked encoding, so getStream() yields clean JSON
+  Serial.println("Fetching weather: " + url);
   if (http.begin(url)) {
     int code = http.GET();
     if (code == 200) {
       JsonDocument doc;
       DeserializationError err = deserializeJson(doc, http.getStream());
-      if (err) Serial.printf("JSON fout: %s\n", err.c_str());
+      if (err) Serial.printf("JSON error: %s\n", err.c_str());
       if (!err) {
         outTemp = doc["current"]["temperature_2m"] | NAN;
         outCode = doc["current"]["weather_code"] | -1;
-        Serial.printf("Buiten: %.1f C, code %d\n", outTemp, outCode);
+        Serial.printf("Outdoor: %.1f C, code %d\n", outTemp, outCode);
       }
     } else {
-      Serial.printf("Weer HTTP fout: %d\n", code);
+      Serial.printf("Weather HTTP error: %d\n", code);
     }
     http.end();
   }
 }
 
-// ---------------- Helderheid ----------------
+// ---------------- Brightness ----------------
 static void applyBrightness(const struct tm &t) {
   uint8_t b;
   switch (brightMode) {
@@ -204,7 +204,7 @@ static void applyBrightness(const struct tm &t) {
   }
 }
 
-// ---------------- Tekenen ----------------
+// ---------------- Drawing ----------------
 static void drawCentered(const char *s, int y, uint32_t color, const lgfx::IFont *f,
                          float size = 1.0f) {
   lcd.setFont(f);
@@ -212,7 +212,7 @@ static void drawCentered(const char *s, int y, uint32_t color, const lgfx::IFont
   lcd.setTextColor(lcd.color888((color >> 16) & 0xFF, (color >> 8) & 0xFF, color & 0xFF),
                    TFT_BLACK);
   lcd.setTextDatum(textdatum_t::top_center);
-  // verkleinen zodat er links en rechts 20px marge overblijft
+  // shrink so a 20px margin remains on the left and right
   const int maxW = lcd.width() - 40;
   int w = lcd.textWidth(s);
   if (w > maxW) lcd.setTextSize(size * maxW / w);
@@ -226,13 +226,13 @@ static void drawTime(const struct tm &t, bool colon) {
   snprintf(buf, sizeof(buf), "%02d%c%02d", t.tm_hour, colon ? ':' : ' ', t.tm_min);
   timeSpr.fillScreen(TFT_BLACK);
   timeSpr.setFont(&fonts::Font7);
-  // schaal zodat de tijd ~300px breed wordt
+  // scale so the time is ~300px wide
   timeSpr.setTextSize(1.0f);
   float scale = 300.0f / timeSpr.textWidth("88:88");
   if (scale * timeSpr.fontHeight() > timeSpr.height()) scale = (float)timeSpr.height() / timeSpr.fontHeight();
   timeSpr.setTextSize(scale);
   timeSpr.setTextDatum(textdatum_t::middle_center);
-  // "spook"-segmenten heel zwak op de achtergrond
+  // very faint "ghost" segments in the background
   timeSpr.setTextColor(lcd.color888(0x1A, 0x06, 0x03));
   timeSpr.drawString("88:88", timeSpr.width() / 2, timeSpr.height() / 2);
   timeSpr.setTextColor(lcd.color888((COLOR_TIME >> 16) & 0xFF, (COLOR_TIME >> 8) & 0xFF, COLOR_TIME & 0xFF));
@@ -242,7 +242,7 @@ static void drawTime(const struct tm &t, bool colon) {
 
 static void drawDate(const struct tm &t) {
   char buf[48];
-  snprintf(buf, sizeof(buf), "%s %d %s %d", DAGEN[t.tm_wday], t.tm_mday, MAANDEN[t.tm_mon],
+  snprintf(buf, sizeof(buf), "%s %d %s %d", DAYS[t.tm_wday], t.tm_mday, MONTHS[t.tm_mon],
            t.tm_year + 1900);
   drawCentered(buf, 150, COLOR_DATE, &fonts::lgfxJapanGothicP_24);
 }
@@ -251,15 +251,15 @@ static void drawTemps() {
   char buf[64];
   lcd.fillRect(0, 185, lcd.width(), 55, TFT_BLACK);
   if (haveAHT && !isnan(inTemp)) {
-    // twee kolommen: binnen | buiten
+    // two columns: indoor | outdoor
     lcd.setFont(&fonts::lgfxJapanGothicP_20);
     lcd.setTextSize(1);
     lcd.setTextDatum(textdatum_t::top_center);
     uint32_t lbl = lcd.color888((COLOR_DIM >> 16) & 0xFF, (COLOR_DIM >> 8) & 0xFF, COLOR_DIM & 0xFF);
     uint32_t val = lcd.color888((COLOR_TEMP >> 16) & 0xFF, (COLOR_TEMP >> 8) & 0xFF, COLOR_TEMP & 0xFF);
     lcd.setTextColor(lbl, TFT_BLACK);
-    lcd.drawString("binnen", 80, 188);
-    lcd.drawString("buiten", 240, 188);
+    lcd.drawString("indoor", 80, 188);
+    lcd.drawString("outdoor", 240, 188);
     lcd.setFont(&fonts::lgfxJapanGothicP_24);
     lcd.setTextColor(val, TFT_BLACK);
     snprintf(buf, sizeof(buf), "%.1f°C  %d%%", inTemp, (int)roundf(inHum));
@@ -269,9 +269,9 @@ static void drawTemps() {
     lcd.drawString(buf, 240, 208);
   } else {
     if (!isnan(outTemp))
-      snprintf(buf, sizeof(buf), "buiten %.1f°C  %s", outTemp, weerTekst(outCode));
+      snprintf(buf, sizeof(buf), "outdoor %.1f°C  %s", outTemp, weatherText(outCode));
     else
-      snprintf(buf, sizeof(buf), "temperatuur ophalen...");
+      snprintf(buf, sizeof(buf), "fetching temperature...");
     drawCentered(buf, 195, COLOR_TEMP, &fonts::lgfxJapanGothicP_24);
   }
 }
@@ -282,9 +282,9 @@ static void drawStatus() {
   lcd.setTextSize(1);
   lcd.setTextDatum(textdatum_t::top_right);
   lcd.setTextColor(lcd.color888(0x40, 0x20, 0x18), TFT_BLACK);
-  const char *m = brightMode == B_AUTO ? "auto" : brightMode == B_DAY ? "fel" : brightMode == B_NIGHT ? "dim" : "uit";
+  const char *m = brightMode == B_AUTO ? "auto" : brightMode == B_DAY ? "bright" : brightMode == B_NIGHT ? "dim" : "off";
   char buf[48];
-  snprintf(buf, sizeof(buf), "%s  %s", WiFi.status() == WL_CONNECTED ? "wifi" : "geen wifi", m);
+  snprintf(buf, sizeof(buf), "%s  %s", WiFi.status() == WL_CONNECTED ? "wifi" : "no wifi", m);
   lcd.drawString(buf, lcd.width() - 6, 6);
 }
 
@@ -296,15 +296,15 @@ static void message(const char *l1, const char *l2 = "") {
 
 // ---------------- Setup ----------------
 static void configModeCallback(WiFiManager *wm) {
-  message("WiFi instellen", "Verbind met netwerk '" SETUP_AP_NAME "'");
-  drawCentered("en open 192.168.4.1", 155, COLOR_DATE, &fonts::lgfxJapanGothicP_20);
+  message("WiFi setup", "Connect to network '" SETUP_AP_NAME "'");
+  drawCentered("and open 192.168.4.1", 155, COLOR_DATE, &fonts::lgfxJapanGothicP_20);
 }
 
 void setup() {
   Serial.begin(115200);
   pinMode(PIN_BUTTON, INPUT_PULLUP);
 
-  // LCD-reset is active high op de BOX-3
+  // LCD reset is active high on the BOX-3
   pinMode(PIN_LCD_RST, OUTPUT);
   digitalWrite(PIN_LCD_RST, HIGH);
   delay(20);
@@ -317,9 +317,9 @@ void setup() {
   lcd.fillScreen(TFT_BLACK);
 
   timeSpr.setColorDepth(16);
-  if (!timeSpr.createSprite(320, 110)) Serial.println("Sprite maken mislukt");
+  if (!timeSpr.createSprite(320, 110)) Serial.println("Failed to create sprite");
 
-  message("Nachtklok", "verbinden met WiFi...");
+  message("Night Clock", "connecting to WiFi...");
   initSensor();
 
   WiFi.mode(WIFI_STA);
@@ -328,12 +328,12 @@ void setup() {
   wm.setConfigPortalTimeout(300);
   wm.setConnectTimeout(20);
   if (!wm.autoConnect(SETUP_AP_NAME)) {
-    message("Geen WiFi", "opnieuw proberen...");
+    message("No WiFi", "retrying...");
     delay(3000);
     ESP.restart();
   }
 
-  message("Nachtklok", "tijd synchroniseren...");
+  message("Night Clock", "syncing time...");
   configTzTime(TZ_INFO, NTP_SERVER_1, NTP_SERVER_2, NTP_SERVER_3);
   struct tm t;
   for (int i = 0; i < 30 && !getLocalTime(&t, 500); i++) {}
@@ -357,7 +357,7 @@ void loop() {
   static bool lastBtn = HIGH;
   static unsigned long lastWifiTry = 0;
 
-  // Knop: helderheidsmodus wisselen
+  // Button: cycle brightness mode
   bool btn = digitalRead(PIN_BUTTON);
   if (btn == LOW && lastBtn == HIGH) {
     brightMode = (BrightMode)((brightMode + 1) % 4);
@@ -366,7 +366,7 @@ void loop() {
   }
   lastBtn = btn;
 
-  // WiFi herverbinden
+  // Reconnect WiFi
   if (WiFi.status() != WL_CONNECTED && millis() - lastWifiTry > 30000) {
     lastWifiTry = millis();
     WiFi.reconnect();
