@@ -2,6 +2,16 @@
 
 A calm bedside clock for the [Espressif ESP32-S3-BOX-3](https://github.com/espressif/esp-box). It shows red digits on a black background, syncs its time over WiFi with an NTP server, and displays the date plus the indoor and outdoor temperature.
 
+![The night clock running on an ESP32-S3-BOX-3 with the sensor dock](docs/images/night-clock.jpg)
+
+This project was built entirely by vibe coding with Claude Code inside Visual Studio Code. Read the story behind it: **[From Idea to Gadget: Vibe Coding a Night Clock in VS Code](https://www.ntpro.nl/blog/archives/3906-From-Idea-to-Gadget-Vibe-Coding-a-Night-Clock-in-VS-Code.html)**.
+
+<p align="center">
+  <img src="docs/images/first-version-rotated.png" width="320" alt="The first version, with the screen rotated 90 degrees">
+  <br>
+  <em>The very first version, with the screen rotated 90 degrees. A photo in the chat was enough to fix it.</em>
+</p>
+
 ## Features
 
 - **Large 7-segment clock** with a blinking colon and faint "ghost" segments.
